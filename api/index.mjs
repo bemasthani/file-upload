@@ -14,7 +14,9 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, ScanCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 
-const s3 = new S3Client({});
+// WHEN_REQUIRED stops newer SDKs adding checksum params to signed links,
+// which would make S3 reject uploads coming from the browser
+const s3 = new S3Client({ requestChecksumCalculation: 'WHEN_REQUIRED' });
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const BUCKET = process.env.S3_BUCKET;
 const TABLE = process.env.TABLE_NAME || 'UploadedFiles';
