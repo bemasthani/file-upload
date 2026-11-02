@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>File Upload</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #f4f6f8; display: flex; justify-content: center; padding-top: 60px; }
+  .card { background: #fff; padding: 24px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.1); width: 460px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  label { font-weight: bold; }
+  #fileText { flex: 1; padding: 10px; border: 2px dashed #999; border-radius: 4px; background: #fafafa; }
+  #fileText.dragover { border-color: #2563eb; background: #eef4ff; }
+  button { padding: 10px 14px; border: none; border-radius: 4px; cursor: pointer; }
+  #browseBtn { background: #e5e7eb; }
+  #submitBtn { background: #2563eb; color: #fff; margin-top: 16px; width: 100%; }
+  #status { margin-top: 12px; font-size: 14px; }
+  .card { width: 900px; max-width: calc(100vw - 32px); box-sizing: border-box; }
+  .card form { max-width: 560px; }
+  h3 { margin: 28px 0 8px; display: flex; justify-content: space-between; align-items: center; }
+  #refreshBtn { background: #e5e7eb; font-size: 13px; padding: 6px 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid #e5e7eb; word-break: break-all; }
+  th { background: #f3f4f6; }
+  td.size { white-space: nowrap; text-align: right; }
+  th.size { text-align: right; }
+  .empty { color: #6b7280; text-align: center; }
+  .deleteBtn { background: #dc2626; color: #fff; font-size: 13px; padding: 6px 12px; white-space: nowrap; }
+  td:last-child { width: 1%; white-space: nowrap; }
+  td:nth-child(4) { white-space: nowrap; }
+  .deleteBtn:disabled { opacity: .6; cursor: default; }
+</style>
+</head>
+<body>
+<div class="card">
+  <form id="uploadForm">
+    <div class="row">
+      <label for="fileText">File:</label>
+      <input type="text" id="fileText" placeholder="Drop a file here" readonly>
+      <button type="button" id="browseBtn">Browse</button>
+      <input type="file" id="fileInput" name="file" hidden>
+    </div>
+    <button type="submit" id="submitBtn">Submit</button>
+    <div id="status"></div>
+  </form>
+
+  <h3>Uploaded Files <button type="button" id="refreshBtn">Refresh</button></h3>
+  <table>
+    <thead>
+      <tr><th>#</th><th>File Name</th><th class="size">Size</th><th>Uploaded At</th><th></th></tr>
+    </thead>
+    <tbody id="filesBody">
+      <tr><td colspan="5" class="empty">Loading...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+  const fileInput = document.getElementById('fileInput');
+  const fileText = document.getElementById('fileText');
+  const status = document.getElementById('status');
+  let selectedFile = null;
+
+  function setFile(file) {
+    selectedFile = file;
+    fileText.value = file ? file.name : '';
+    status.textContent = '';
+  }
+
+  document.getElementById('browseBtn').onclick = () => fileInput.click();
+  fileText.onclick = () => fileInput.click();
+  fileInput.onchange = () => setFile(fileInput.files[0]);
+
+  ['dragenter', 'dragover'].forEach(evt =>
+    fileText.addEventListener(evt, e => { e.preventDefault(); fileText.classList.add('dragover'); }));
+  ['dragleave', 'drop'].forEach(evt =>
+    fileText.addEventListener(evt, e => { e.preventDefault(); fileText.classList.remove('dragover'); }));
+  fileText.addEventListener('drop', e => setFile(e.dataTransfer.files[0]));
+
+  document.getElementById('uploadForm').onsubmit = async e => {
+    e.preventDefault();
+    if (!selectedFile) { status.textContent = 'Please select a file first.'; status.style.color = 'red'; return; }
+    const data = new FormData();
+    data.append('file', selectedFile);
+    status.style.color = 'black';
+    status.textContent = 'Uploading...';
+    try {
+      const res = await fetch('/upload', { method: 'POST', body: data });
+      const msg = await res.text();
+      status.style.color = res.ok ? 'green' : 'red';
+      status.textContent = msg;
+      if (res.ok) {
+        setFile(null);
+        status.textContent = msg; // keep message after clearing
+        // Lambda writes the record a moment after the upload
+        setTimeout(loadFiles, 2000);
+        setTimeout(loadFiles, 5000);
+      }
+    } catch (err) {
+      status.style.color = 'red';
+      status.textContent = 'Upload failed: ' + err.message;
+    }
+  };
+
+  // ---- Uploaded files table ----
+  const filesBody = document.getElementById('filesBody');
+
+  function formatSize(bytes) {
+    if (bytes == null) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let i = 0, n = Number(bytes);
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return (i === 0 ? n : n.toFixed(1)) + ' ' + units[i];
+  }
+
+  function cell(text, cls) {
+    const td = document.createElement('td');
+    td.textContent = text;
+    if (cls) td.className = cls;
+    return td;
+  }
+
+  function emptyRow(text) {
+    filesBody.innerHTML = '';
+    const tr = document.createElement('tr');
+    const td = cell(text, 'empty');
+    td.colSpan = 5;
+    tr.appendChild(td);
+    filesBody.appendChild(tr);
+  }
+
+  async function loadFiles() {
+    try {
+      const res = await fetch('/files');
+      const files = await res.json();
+      if (!res.ok) return emptyRow('Could not load files: ' + (files.error || res.status));
+      if (!files.length) return emptyRow('No files uploaded yet.');
+
+      filesBody.innerHTML = '';
+      files.forEach((f, i) => {
+        const tr = document.createElement('tr');
+        tr.appendChild(cell(i + 1));
+        tr.appendChild(cell(f.fileName));
+        tr.appendChild(cell(formatSize(f.fileSize), 'size'));
+        tr.appendChild(cell(f.uploadedAt ? new Date(f.uploadedAt).toLocaleString() : ''));
+
+        const actionTd = document.createElement('td');
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'deleteBtn';
+        delBtn.textContent = 'Delete';
+        delBtn.onclick = () => deleteFile(f.fileName, delBtn);
+        actionTd.appendChild(delBtn);
+        tr.appendChild(actionTd);
+
+        filesBody.appendChild(tr);
+      });
+    } catch (err) {
+      emptyRow('Could not load files: ' + err.message);
+    }
+  }
+
+  async function deleteFile(fileName, btn) {
+    if (!confirm(`Delete "${fileName}"?\nThis removes it from S3 and DynamoDB.`)) return;
+    btn.disabled = true;
+    btn.textContent = 'Deleting...';
+    try {
+      const res = await fetch('/files/' + encodeURIComponent(fileName), { method: 'DELETE' });
+      const msg = await res.text();
+      status.style.color = res.ok ? 'green' : 'red';
+      status.textContent = msg;
+    } catch (err) {
+      status.style.color = 'red';
+      status.textContent = 'Delete failed: ' + err.message;
+    }
+    loadFiles();
+  }
+
+  document.getElementById('refreshBtn').onclick = loadFiles;
+  loadFiles();
+</script>
+</body>
+</html>
