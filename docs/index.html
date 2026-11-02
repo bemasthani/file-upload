@@ -83,23 +83,26 @@
   document.getElementById('uploadForm').onsubmit = async e => {
     e.preventDefault();
     if (!selectedFile) { status.textContent = 'Please select a file first.'; status.style.color = 'red'; return; }
+    const file = selectedFile;           // keep our own copy for the whole upload
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;           // block double clicks
     status.style.color = 'black';
     status.textContent = 'Uploading...';
     try {
-      const contentType = selectedFile.type || 'application/octet-stream';
+      const contentType = file.type || 'application/octet-stream';
       // 1. Ask the API for a signed upload link
       const linkRes = await fetch(API_URL + '/upload-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileName: selectedFile.name, contentType })
+        body: JSON.stringify({ fileName: file.name, contentType })
       });
       const link = await linkRes.json();
       if (!linkRes.ok) throw new Error(link.error || linkRes.status);
 
       // 2. Send the file straight to S3
-      const res = await fetch(link.url, { method: 'PUT', headers: { 'Content-Type': contentType }, body: selectedFile });
+      const res = await fetch(link.url, { method: 'PUT', headers: { 'Content-Type': contentType }, body: file });
       const msg = res.ok
-        ? `Uploaded "${selectedFile.name}" to s3://business-insurance-prep-worksheet-2026/${link.key}`
+        ? `Uploaded "${file.name}" to s3://business-insurance-prep-worksheet-2026/${link.key}`
         : 'S3 upload failed: ' + res.status + ' ' + (await res.text()).slice(0, 200);
       status.style.color = res.ok ? 'green' : 'red';
       status.textContent = msg;
@@ -113,6 +116,8 @@
     } catch (err) {
       status.style.color = 'red';
       status.textContent = 'Upload failed: ' + err.message;
+    } finally {
+      submitBtn.disabled = false;
     }
   };
 
